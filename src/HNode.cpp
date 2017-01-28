@@ -116,8 +116,8 @@ hnode_process_ep_packet( GIOChannel *source, GIOCondition condition, gpointer da
 {
     CONTEXT *Context = (CONTEXT *) data;
 
-    HNodeWeatherEPPacket    packet;
-    HNodeWeatherMeasurement reading;
+    HNodeSEPPacket    packet;
+    HNodeSensorMeasurement reading;
     uint32_t recvd = 0;
 
     //std::cout << "start recvd..." << std::endl;
@@ -126,7 +126,7 @@ hnode_process_ep_packet( GIOChannel *source, GIOCondition condition, gpointer da
 
     switch( packet.getType() )
     {
-        case HNWEPP_TYPE_HNW_MEASUREMENT:
+        case HNSEPP_TYPE_HNW_MEASUREMENT:
         {
             reading.parsePacketData( packet.getPayloadPtr(), recvd );
 

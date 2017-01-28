@@ -57,16 +57,16 @@ typedef enum Acurite5N1StatusRequestIDs
 class WeatherManagerMeasurements
 {
     private:
-        std::list< HNodeWeatherMeasurement > history;
+        std::list< HNodeSensorMeasurement > history;
 
     public:
 
         WeatherManagerMeasurements();
        ~WeatherManagerMeasurements();
 
-        void addNewMeasurement(  HNodeWeatherMeasurement &measurement );
+        void addNewMeasurement(  HNodeSensorMeasurement &measurement );
 
-        bool getCurrentMeasurement( HNodeWeatherMeasurement &measurement );
+        bool getCurrentMeasurement( HNodeSensorMeasurement &measurement );
 };
 
 class Acurite5N1Manager : public RESTContentManager
@@ -74,7 +74,7 @@ class Acurite5N1Manager : public RESTContentManager
     private:
         std::string stationName;
 
-        std::map< HNWM_TYPE_T, WeatherManagerMeasurements > measurements;
+        std::map< HNSM_TYPE_T, WeatherManagerMeasurements > measurements;
 
         virtual void populateContentNodeFromStatusProvider( unsigned int id, RESTContentNode *outNode, std::map< std::string, std::string > paramMap );
 
@@ -90,7 +90,7 @@ class Acurite5N1Manager : public RESTContentManager
 
         void processCurrentEvents( uint32_t &curTime );
 
-        void addNewMeasurement( HNodeWeatherMeasurement &measurement );
+        void addNewMeasurement( HNodeSensorMeasurement &measurement );
 
         virtual RESTContentNode* newObject( unsigned int type );
         virtual void freeObject( RESTContentNode *objPtr );

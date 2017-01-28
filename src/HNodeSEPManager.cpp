@@ -30,7 +30,7 @@ WeatherManagerMeasurements::~WeatherManagerMeasurements()
 }
 
 void 
-WeatherManagerMeasurements::addNewMeasurement( HNodeWeatherMeasurement &measurement )
+WeatherManagerMeasurements::addNewMeasurement( HNodeSensorMeasurement &measurement )
 {
     history.push_front( measurement );
 
@@ -41,7 +41,7 @@ WeatherManagerMeasurements::addNewMeasurement( HNodeWeatherMeasurement &measurem
 }
 
 bool 
-WeatherManagerMeasurements::getCurrentMeasurement( HNodeWeatherMeasurement &measurement )
+WeatherManagerMeasurements::getCurrentMeasurement( HNodeSensorMeasurement &measurement )
 {
     if( history.size() == 0 )
         return false;
@@ -148,10 +148,10 @@ Acurite5N1Manager::populateContentNodeFromStatusProvider( unsigned int id, RESTC
             mList->setAsArray( "measurement-list" );
             outNode->addChild( mList );
 
-            for( std::map< HNWM_TYPE_T, WeatherManagerMeasurements >::iterator it = measurements.begin(); it != measurements.end(); it++ )
+            for( std::map< HNSM_TYPE_T, WeatherManagerMeasurements >::iterator it = measurements.begin(); it != measurements.end(); it++ )
             {
                 RESTContentNode         *curNode;
-                HNodeWeatherMeasurement  curM;
+                HNodeSensorMeasurement  curM;
                 struct timeval           tstamp;
                 char                     tmpStr[128];
               
@@ -346,9 +346,9 @@ Acurite5N1Manager::start()
 }
 
 void 
-Acurite5N1Manager::addNewMeasurement( HNodeWeatherMeasurement &measurement )
+Acurite5N1Manager::addNewMeasurement( HNodeSensorMeasurement &measurement )
 {
-    std::map< HNWM_TYPE_T, WeatherManagerMeasurements >::iterator it;
+    std::map< HNSM_TYPE_T, WeatherManagerMeasurements >::iterator it;
 
     it = measurements.find( measurement.getType() );
 
@@ -356,7 +356,7 @@ Acurite5N1Manager::addNewMeasurement( HNodeWeatherMeasurement &measurement )
     {
         WeatherManagerMeasurements mtmp;
 
-        measurements.insert( std::pair< HNWM_TYPE_T, WeatherManagerMeasurements >( measurement.getType(), mtmp ) );
+        measurements.insert( std::pair< HNSM_TYPE_T, WeatherManagerMeasurements >( measurement.getType(), mtmp ) );
 
         it = measurements.find( measurement.getType() );
     }
