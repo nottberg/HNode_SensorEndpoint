@@ -126,7 +126,7 @@ hnode_process_ep_packet( GIOChannel *source, GIOCondition condition, gpointer da
 
     switch( packet.getType() )
     {
-        case HNSEPP_TYPE_HNW_MEASUREMENT:
+        case HNSEPP_TYPE_HNS_MEASUREMENT:
         {
             reading.parsePacketData( packet.getPayloadPtr(), recvd );
 
