@@ -7,15 +7,36 @@
 #include "HNodeSEPManager.hpp"
 #include "HNodeSEPResource.hpp"
 
-WeatherRootResource::WeatherRootResource( Acurite5N1Manager &mgr )
-:RESTResourceRESTStatusProvider( "/measurements/current", mgr, WXRSRC_STATID_CURRENT_READING )
+HNodeSEPHealthResource::HNodeSEPHealthResource( HNodeSEPManager &mgr )
+:RESTResourceRESTStatusProvider( "/health", mgr, WXRSRC_STATID_HEALTH )
 {
 
 }
 
-WeatherRootResource::~WeatherRootResource()
+HNodeSEPHealthResource::~HNodeSEPHealthResource()
 {
 
 }
 
+HNodeSEPDefinitionResource::HNodeSEPDefinitionResource( HNodeSEPManager &mgr )
+:RESTResourceRESTStatusProvider( "/sensors/definitions", mgr, WXRSRC_STATID_SENSOR_DEFINITIONS )
+{
+
+}
+
+HNodeSEPDefinitionResource::~HNodeSEPDefinitionResource()
+{
+
+}
+
+HNodeSEPCurrentResource::HNodeSEPCurrentResource( HNodeSEPManager &mgr )
+:RESTResourceRESTStatusProvider( "/sensors/current", mgr, WXRSRC_STATID_CURRENT_READING )
+{
+
+}
+
+HNodeSEPCurrentResource::~HNodeSEPCurrentResource()
+{
+
+}
 

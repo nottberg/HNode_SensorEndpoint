@@ -4,13 +4,31 @@
 #include <hnode-rest.hpp>
 #include "HNodeSEPManager.hpp"
 
-class WeatherRootResource : public RESTResourceRESTStatusProvider
+class HNodeSEPHealthResource : public RESTResourceRESTStatusProvider
 {
     private:
 
     public:
-        WeatherRootResource( Acurite5N1Manager &mgr );
-       ~WeatherRootResource();
+        HNodeSEPHealthResource( HNodeSEPManager &mgr );
+       ~HNodeSEPHealthResource();
+};
+
+class HNodeSEPDefinitionResource : public RESTResourceRESTStatusProvider
+{
+    private:
+
+    public:
+        HNodeSEPDefinitionResource( HNodeSEPManager &mgr );
+       ~HNodeSEPDefinitionResource();
+};
+
+class HNodeSEPCurrentResource : public RESTResourceRESTStatusProvider
+{
+    private:
+
+    public:
+        HNodeSEPCurrentResource( HNodeSEPManager &mgr );
+       ~HNodeSEPCurrentResource();
 };
 
 #endif //__HNODE_SEP_RESOURCE_H__

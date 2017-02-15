@@ -8,6 +8,7 @@
 #include <libxml/tree.h>
 #include <libxml/encoding.h>
 #include <libxml/xmlwriter.h>
+#include <libxml/xpath.h>
 
 #include <string.h>
 #include <arpa/inet.h>
@@ -19,18 +20,76 @@
 
 #include "HNodeSEPManager.hpp"
 
-WeatherManagerMeasurements::WeatherManagerMeasurements()
+SensorDefinition::SensorDefinition()
+{
+    sensorIndex = -1;
+}
+
+SensorDefinition::~SensorDefinition()
 {
 
 }
 
-WeatherManagerMeasurements::~WeatherManagerMeasurements()
+void
+SensorDefinition::setIndex( uint32_t index )
+{
+    sensorIndex = index;
+}
+
+uint32_t 
+SensorDefinition::getIndex()
+{
+    return sensorIndex;
+}
+
+void 
+SensorDefinition::setID( std::string value )
+{
+    sensorID = value;
+}
+
+std::string 
+SensorDefinition::getID()
+{
+    return sensorID;
+}
+
+void 
+SensorDefinition::setName( std::string value )
+{
+    sensorName = value;
+}
+
+std::string 
+SensorDefinition::getName()
+{
+    return sensorName;
+}
+
+void 
+SensorDefinition::setDesc( std::string value )
+{
+    sensorDesc = value;
+}
+
+std::string 
+SensorDefinition::getDesc()
+{
+    return sensorDesc;
+}
+
+SensorMeasurements::SensorMeasurements()
+{
+
+}
+
+SensorMeasurements::~SensorMeasurements()
 {
 
 }
 
 void 
-WeatherManagerMeasurements::addNewMeasurement( HNodeSensorMeasurement &measurement )
+SensorMeasurements::addNewMeasurement( HNodeSensorMeasurement &measurement )
 {
     history.push_front( measurement );
 
@@ -40,8 +99,9 @@ WeatherManagerMeasurements::addNewMeasurement( HNodeSensorMeasurement &measureme
     }
 }
 
+
 bool 
-WeatherManagerMeasurements::getCurrentMeasurement( HNodeSensorMeasurement &measurement )
+SensorMeasurements::getCurrentMeasurement( HNodeSensorMeasurement &measurement )
 {
     if( history.size() == 0 )
         return false;
@@ -51,59 +111,181 @@ WeatherManagerMeasurements::getCurrentMeasurement( HNodeSensorMeasurement &measu
     return true;
 }
 
-Acurite5N1Manager::Acurite5N1Manager()
+HNodeSEPManager::HNodeSEPManager()
 {
-    //cfgPath         = "/etc/hnode";  
+    cfgPath         = "/etc/hnode";  
+
+    // Start up with bad health, 
+    // until we have seen good health.
+    localOK  = false;
+    localMsg ="Starting Up";
+
+    healthOK = false;
+    healthMsg ="Starting Up";
 }
 
-Acurite5N1Manager::~Acurite5N1Manager()
+HNodeSEPManager::~HNodeSEPManager()
 {
 
 }
 
+void
+HNodeSEPManager::parseSensor( xmlDocPtr doc, xmlNodePtr objNode )
+{
+    xmlNode          *curElem;
+    xmlChar          *tmpStr;
+    SensorDefinition  sensorDef;
+    uint32_t          index;
+    bool              indexSet = false;
+
+    // Find the address element
+    for( curElem = objNode->children; curElem; curElem = curElem->next ) 
+    {
+
+        if( ( curElem->type == XML_ELEMENT_NODE ) && ( xmlChildElementCount( curElem ) == 0 ) ) 
+        {
+            if( "index" == (const char *)curElem->name )
+            {
+                tmpStr = xmlNodeGetContent( curElem );
+                index = strtol( (char*)tmpStr, NULL, 0 );
+                sensorDef.setIndex( index );
+                indexSet = true;
+                xmlFree( tmpStr );
+            }
+            else if( "id" == (const char *)curElem->name )
+            {
+                tmpStr = xmlNodeGetContent( curElem );
+                sensorDef.setID( (char*)tmpStr );
+                xmlFree( tmpStr );
+            }
+            else if( "name" == (const char *)curElem->name )
+            {
+                tmpStr = xmlNodeGetContent( curElem );
+                sensorDef.setName( (char*)tmpStr );
+                xmlFree( tmpStr );
+            }
+            else if( "desc" == (const char *)curElem->name )
+            {
+                tmpStr = xmlNodeGetContent( curElem );
+                sensorDef.setDesc( (char*)tmpStr );
+                xmlFree( tmpStr );
+            }
+        }
+    }
+
+    if( indexSet == true )
+    {
+        definitions.insert( std::pair< uint32_t, SensorDefinition >( index, sensorDef ) );
+    }
+}
 
 bool
-Acurite5N1Manager::loadConfiguration()
+HNodeSEPManager::loadConfiguration()
 {
-#if 0
+    xmlDocPtr           doc;
+    xmlNode            *rootElem;
+    xmlNode            *curElem;
+    xmlXPathContextPtr  xpathCtx; 
+    xmlXPathObjectPtr   xpathObj; 
     std::string filePath;
-    ScheduleConfig cfgReader;
 
-    filePath = cfgPath + "/irrigation/schedule_config.xml";
+    filePath = cfgPath + "/sep/sep_config.xml";
 
     // Clear out any existing items.
     clear();
 
-    // Load the local timezone information
-    localtz.initFromSystemFiles();
+    doc = xmlReadFile( filePath.c_str(), NULL, 0 );
+    if (doc == NULL) 
+    {
+        fprintf( stderr, "Failed to parse %s\n", filePath.c_str() );
+        setLocalHealthError( "Missing or unparsable configuration file: " + filePath );
+	    return true;
+    }
 
-    // Read everything from a file
-    cfgReader.readConfig( filePath, this );
+    std::cout << "HNodeSEPManager::loadConfiguration" << std::endl;
 
-    eventLog.addLogEntry( "sch-load-config", "The configuration file was loaded." );
-#endif
+    // Get the root element for the document
+    rootElem = xmlDocGetRootElement( doc );
+
+    // Create xpath evaluation context 
+    xpathCtx = xmlXPathNewContext( doc );
+    if( xpathCtx == NULL ) 
+    {
+        fprintf( stderr,"Error: unable to create new XPath context\n" );
+        return true;
+    }
+
+    // Process all of the sensor definitions
+    std::string nodeXPath = "/hnode-sep-config/stationid";
+
+    xpathObj = xmlXPathEvalExpression( (const xmlChar *) nodeXPath.c_str(), xpathCtx );
+    if( xpathObj == NULL ) 
+    {
+        fprintf( stderr,"Error: unable to evaluate xpath expression \"%s\"\n", nodeXPath.c_str() );
+        return true;
+    }
+    
+    if( ( xpathObj->nodesetval != NULL ) && ( xpathObj->nodesetval->nodeNr > 0 ) )
+    {    
+        if( xpathObj->nodesetval->nodeTab[0]->type == XML_ELEMENT_NODE )
+        {
+            xmlChar *tmpStr = xmlNodeGetContent( xpathObj->nodesetval->nodeTab[0] );
+            stationID = (char*)tmpStr;
+            xmlFree( tmpStr );
+        }
+    }
+
+    // Free things.
+    xmlXPathFreeObject(xpathObj);
+
+    // Process all of the sensor definitions
+    nodeXPath = "/hnode-sep-config/sensor-list/sensor";
+
+    xpathObj = xmlXPathEvalExpression( (const xmlChar *) nodeXPath.c_str(), xpathCtx );
+    if( xpathObj == NULL ) 
+    {
+        fprintf( stderr,"Error: unable to evaluate xpath expression \"%s\"\n", nodeXPath.c_str() );
+        return true;
+    }
+    
+    if( xpathObj->nodesetval != NULL )
+    {    
+        int nodeCnt = xpathObj->nodesetval->nodeNr;
+
+        if( nodeCnt != 0 )
+        {
+            std::cout << "Result (%d nodes): " << nodeCnt <<std::endl;
+            for( unsigned int nodeIndx = 0; nodeIndx < nodeCnt; ++nodeIndx ) 
+            {  
+                curElem = xpathObj->nodesetval->nodeTab[ nodeIndx ];	
+
+                if( curElem->type == XML_ELEMENT_NODE ) 
+                {
+                    std::cout << "object Elem: " << curElem->name <<std::endl;
+                    parseSensor( doc, curElem );
+	            } 
+            }
+        }
+    }
+
+    // Free things.
+    xmlXPathFreeObject(xpathObj);
+
+    // Free things
+    xmlXPathFreeContext(xpathCtx); 
+    xmlFreeDoc(doc);
+
     return false;
 }
 
 bool
-Acurite5N1Manager::saveConfiguration()
+HNodeSEPManager::saveConfiguration()
 {
-#if 0
-    ScheduleConfig cfgWriter;
-    std::string filePath;
-
-    filePath = cfgPath + "/irrigation/schedule_config.xml";
-
-    // Write everything out to a file
-    cfgWriter.writeConfig( filePath, this );
-
-    eventLog.addLogEntry( "sch-save-config", "The configuration file was saved." );
-#endif
     return false;
 }
 
 void 
-Acurite5N1Manager::processCurrentEvents( uint32_t &curTime )
+HNodeSEPManager::processCurrentEvents( uint32_t &curTime )
 {
     //printf( "processCurrentEvents: %s\n", curTime.getSimpleString().c_str() );
     //printf( "processCurrentEvents: %s\n", curTime.getISOString().c_str() );
@@ -114,33 +296,91 @@ Acurite5N1Manager::processCurrentEvents( uint32_t &curTime )
 }
 
 void 
-Acurite5N1Manager::populateContentNodeFromStatusProvider( unsigned int id, RESTContentNode *outNode, std::map< std::string, std::string > paramMap )
+HNodeSEPManager::populateContentNodeFromStatusProvider( unsigned int id, RESTContentNode *outNode, std::map< std::string, std::string > paramMap )
 {
 
     switch( id )
     {
-        case WXRSRC_STATID_CURRENT_READING:
+        case WXRSRC_STATID_HEALTH:
+        {
+            char tmpStr[128];
+
+            // Give the root element a tag name
+            outNode->setAsObject( "hnode-sep-health" );
+
+            if( localOK == false )
+            {
+                outNode->setField( "state", "failed" );
+                outNode->setField( "msg", localMsg );
+            }
+            else if( healthOK == false )
+            {
+                outNode->setField( "state", "failed" );
+                outNode->setField( "msg", healthMsg );
+            }
+            else
+            {
+                outNode->setField( "state", "running" );
+            }
+
+            sprintf( tmpStr, "%lu", healthStatusTime.tv_sec ); 
+            outNode->setField( "status-ts-sec", tmpStr );
+
+            sprintf( tmpStr, "%lu", healthStatusTime.tv_usec ); 
+            outNode->setField( "status-ts-usec", tmpStr );
+
+            sprintf( tmpStr, "%lu", healthLastMeasurementTime.tv_sec ); 
+            outNode->setField( "last-measurement-ts-sec", tmpStr );
+
+            sprintf( tmpStr, "%lu", healthLastMeasurementTime.tv_usec ); 
+            outNode->setField( "last-measurement-ts-usec", tmpStr );
+
+            sprintf( tmpStr, "%u", healthMeasurementCount ); 
+            outNode->setField( "measurement-count", tmpStr );
+        }
+        break;
+
+        case WXRSRC_STATID_SENSOR_DEFINITIONS:
         {
             // Give the root element a tag name
+            outNode->setAsObject( "hnode-sep-sensor-definitions" );
+
+            // Add a list for any active zones
+            RESTContentNode *mList = RESTContentHelperFactory::newContentNode();
+
+            mList->setAsArray( "sensor-definition-list" );
+            outNode->addChild( mList );
+
+            // Should we indicate this somehow??
+            if( localOK == false )
+            {
+                break;
+            }
+
+            for( std::map< uint32_t, SensorDefinition >::iterator dit = definitions.begin(); dit != definitions.end(); dit++ )
+            {
+                RESTContentNode         *curNode;
+                char                     tmpStr[128];
+
+                curNode = RESTContentHelperFactory::newContentNode();
+
+                curNode->setAsObject( "sensor-definition" );
+
+                curNode->setField( "station-id", stationID );
+                curNode->setField( "sensor-id", dit->second.getID() );
+                curNode->setField( "name", dit->second.getName() );
+                curNode->setField( "desc", dit->second.getDesc() );
+
+                mList->addChild( curNode );
+            }
+        }
+        break;
+
+        case WXRSRC_STATID_CURRENT_READING:
+        {
+
+            // Give the root element a tag name
             outNode->setAsObject( "current-measurements" );
-
-#if 0
-            // Give the currect time as we see it
-            ScheduleDateTime timestamp;
-            timestamp.getCurrentTime();
-            outNode->setField( "timestamp", timestamp.getISOString() );
-
-            // Give the controllers timezone
-            std::string tmpStr = localtz.getOlsenStr();
-            outNode->setField( "timezone", tmpStr );
-
-            // Give the controllers timezone
-            tmpStr = localtz.getPosixStr();
-            outNode->setField( "posix-timezone", tmpStr );
-
-            // Master enable state
-            outNode->setField( "master-enable", masterEnable ? "true" : "false" );
-#endif
 
             // Add a list for any active zones
             RESTContentNode *mList = RESTContentHelperFactory::newContentNode();
@@ -148,13 +388,26 @@ Acurite5N1Manager::populateContentNodeFromStatusProvider( unsigned int id, RESTC
             mList->setAsArray( "measurement-list" );
             outNode->addChild( mList );
 
-            for( std::map< HNSM_TYPE_T, WeatherManagerMeasurements >::iterator it = measurements.begin(); it != measurements.end(); it++ )
+            // Should we indicate this somehow??
+            if( ( localOK == false ) || ( healthOK == false ) )
+            {
+                break;
+            }
+
+            for( std::map< uint32_t, SensorDefinition >::iterator dit = definitions.begin(); dit != definitions.end(); dit++ )
             {
                 RESTContentNode         *curNode;
-                HNodeSensorMeasurement  curM;
+                HNodeSensorMeasurement   curM;
                 struct timeval           tstamp;
                 char                     tmpStr[128];
-              
+
+                std::map< uint32_t, SensorMeasurements >::iterator it = measurements.find( dit->first );
+
+                if( it == measurements.end() )
+                {
+                    continue;
+                }
+                     
                 if( it->second.getCurrentMeasurement( curM ) == false )
                 {
                     continue;
@@ -163,6 +416,9 @@ Acurite5N1Manager::populateContentNodeFromStatusProvider( unsigned int id, RESTC
                 curNode = RESTContentHelperFactory::newContentNode();
 
                 curNode->setAsObject( "measurement" );
+
+                curNode->setField( "station-id", stationID );
+                curNode->setField( "sensor-id", dit->second.getID() );
 
                 curNode->setField( "type", curM.getTypeAsStr() );
                 curNode->setField( "units", curM.getUnitsAsStr() );
@@ -176,71 +432,14 @@ Acurite5N1Manager::populateContentNodeFromStatusProvider( unsigned int id, RESTC
                 curM.getTimestamp( tstamp );
 
                 sprintf( tmpStr, "%lu", tstamp.tv_sec ); 
-                curNode->setField( "tstamp_sec", tmpStr );
+                curNode->setField( "tstamp-sec", tmpStr );
 
                 sprintf( tmpStr, "%lu", tstamp.tv_usec ); 
-                curNode->setField( "tstamp_usec", tmpStr );
+                curNode->setField( "tstamp-usec", tmpStr );
 
                 mList->addChild( curNode );
             }
 
-#if 0
-            // Add todays scheduled events
-            RESTContentNode *dsList = RESTContentHelperFactory::newContentNode();
-
-            dsList->setAsArray( "todays-schedule" );
-            outNode->addChild( dsList );
-
-            ScheduleLocalDateTime startTime( timestamp );
-            startTime.retreatToStartOfDay();
-
-            ScheduleLocalDateTime endTime( timestamp );
-            endTime.advanceToEndOfDay();
-
-            eventList = getPotentialEventsForPeriod( startTime.getUTCTime(), endTime.getUTCTime() );
-
-            // Do processing for active rules
-            for( unsigned int index = 0; index < eventList->getEventCount(); ++index )
-            {
-                ScheduleEvent *event = eventList->getEvent( index );
-
-                ScheduleDateTime evStart;
-                ScheduleDateTime evEnd;
-
-                event->getStartTime( evStart );
-                event->getEndTime( evEnd );
-
-                std::cout << "Event Entry -- ID: " << event->getId() << " Title: " << event->getDescription() << " Start: " << evStart.getISOString() << " End: " << evEnd.getISOString() << std::endl;
-
-                RESTContentNode *curNode = RESTContentHelperFactory::newContentNode();
-
-                curNode->setAsObject( "event" );
-
-                curNode->setField( "id", event->getId() );
-                curNode->setField( "start-time", evStart.getISOString() );
-                curNode->setField( "end-time", evEnd.getISOString() );
-                curNode->setField( "zone-name", event->getZoneRecord().getZoneName() );
-                curNode->setField( "trigger-name", event->getTriggerRecord().getTriggerName() );
-                curNode->setField( "duration", event->getDurationStr() );  
-                curNode->setField( "erID", event->getTriggerRecord().getERID() );
-                curNode->setField( "zgID", event->getZoneRecord().getGroupID() );
-                curNode->setField( "zrID", event->getZoneRecord().getRuleID() );
-                curNode->setField( "tgID", event->getTriggerRecord().getGroupID() );
-                curNode->setField( "trID", event->getTriggerRecord().getRuleID() );
-          
-                dsList->addChild( curNode );
-            } 
-
-            freeScheduleEventList( eventList );
-    
-
-            // Add todays log events
-            RESTContentNode *evList = RESTContentHelperFactory::newContentNode();
-
-            outNode->addChild( evList );
-
-            eventLog.populateTodaysEventsNode( evList, timestamp );
-#endif
         }
         break;
 #if 0
@@ -338,52 +537,85 @@ Acurite5N1Manager::populateContentNodeFromStatusProvider( unsigned int id, RESTC
 
 }
 
-void
-Acurite5N1Manager::start()
+void 
+HNodeSEPManager::setLocalHealthError( std::string errMsg )
 {
-    //demod = new RTL433Demodulator;
-    //demod->start();
+    localOK  = false;
+    localMsg = errMsg;
 }
 
 void 
-Acurite5N1Manager::addNewMeasurement( HNodeSensorMeasurement &measurement )
+HNodeSEPManager::setLocalHealthOK()
 {
-    std::map< HNSM_TYPE_T, WeatherManagerMeasurements >::iterator it;
+    localOK = true;
+    localMsg.clear();
+}
 
-    it = measurements.find( measurement.getType() );
+void
+HNodeSEPManager::start()
+{
+
+}
+
+void 
+HNodeSEPManager::addNewMeasurement( uint32_t sensorIndex, HNodeSensorMeasurement &measurement )
+{
+    std::map< uint32_t, SensorMeasurements >::iterator it;
+
+    it = measurements.find( sensorIndex );
 
     if( it == measurements.end() )
     {
-        WeatherManagerMeasurements mtmp;
+        SensorMeasurements mtmp;
 
-        measurements.insert( std::pair< HNSM_TYPE_T, WeatherManagerMeasurements >( measurement.getType(), mtmp ) );
+        measurements.insert( std::pair< uint32_t, SensorMeasurements >( sensorIndex, mtmp ) );
 
-        it = measurements.find( measurement.getType() );
+        it = measurements.find( sensorIndex );
     }
     
     it->second.addNewMeasurement( measurement );
 }
 
+void 
+HNodeSEPManager::updateHealthStatus( bool okflag, struct timeval *statusTime, struct timeval *lastMeasurementTime, uint32_t measurementCount )
+{
+    healthOK = okflag;
+
+    healthStatusTime.tv_sec  = statusTime->tv_sec;
+    healthStatusTime.tv_usec = statusTime->tv_usec;
+
+    healthLastMeasurementTime.tv_sec  = lastMeasurementTime->tv_sec;
+    healthLastMeasurementTime.tv_usec = lastMeasurementTime->tv_usec;
+
+    healthMeasurementCount = measurementCount;
+}
+       
+void 
+HNodeSEPManager::updateHealthMsg( std::string value )
+{
+    healthMsg = value;
+}
+
 RESTContentNode* 
-Acurite5N1Manager::newObject( unsigned int type )
+HNodeSEPManager::newObject( unsigned int type )
 {
     return NULL;
 }
 
 void 
-Acurite5N1Manager::freeObject( RESTContentNode *objPtr )
+HNodeSEPManager::freeObject( RESTContentNode *objPtr )
 {
 
 }
 
 unsigned int 
-Acurite5N1Manager::getTypeFromObjectElementName( std::string name )
+HNodeSEPManager::getTypeFromObjectElementName( std::string name )
 {
     return 0;
 }
 
 RESTContentTemplate *
-Acurite5N1Manager::getContentTemplateForType( unsigned int type )
+HNodeSEPManager::getContentTemplateForType( unsigned int type )
 {
     return NULL;
 }

@@ -44,7 +44,7 @@
 #include "HNodeSEPResource.hpp"
 
 //guint8 gUID[16] = {0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e, 0xfe, 0xff};
-guint8 gWeatherSignature[4] = {0x10, 0x26, 0x26, 0x10};
+guint8 gSensorSignature[4] = {0x01, 0x62, 0x26, 0x10};
 
 static gint wait_time = 0;
 static gint instance_id = 0;
@@ -57,7 +57,7 @@ static gboolean event = FALSE;
 static gboolean updown = FALSE;
 
 
-typedef struct WeatherNodeContext
+typedef struct SensorNodeContext
 {
     GHNode    *HNode;
 
@@ -69,43 +69,47 @@ typedef struct WeatherNodeContext
 
     RESTDaemon   Rest;
 
-    Acurite5N1Manager   wxManager;
+    HNodeSEPManager   sepManager;
 
-    WeatherRootResource     wxResource;
+    HNodeSEPHealthResource      healthResource;
+    HNodeSEPDefinitionResource  defResource;
+    HNodeSEPCurrentResource     currentResource;
 
-    WeatherNodeContext() : wxResource( this->wxManager ) {}
+    SensorNodeContext() : healthResource( this->sepManager ), defResource( this->sepManager ), currentResource( this->sepManager ) {}
 
 }CONTEXT;
 
 //static struct termios saved_io;
 
-#define HNODE_WEATHER_EP_DEFAULT_PORT 8888
+#define HNODE_SENSOR_EP_DEFAULT_PORT 8200
 
 bool
-hnode_load_configuration(CONTEXT *Context)
+hnode_load_configuration( CONTEXT *Context )
 {
     // Load the configuration for the switches
-    Context->wxManager.loadConfiguration();
+    Context->sepManager.loadConfiguration();
 
     return false;
 }
 
 bool
-hnode_start_hardware_interface(CONTEXT *Context)
+hnode_start_hardware_interface( CONTEXT *Context )
 {
     // Start everything up
-    Context->wxManager.start();
+    Context->sepManager.start();
     
     return false;
 }
 
 bool
-hnode_start_rest_daemon(CONTEXT *Context)
+hnode_start_rest_daemon( CONTEXT *Context )
 {
     // Init the REST resources.
-    Context->Rest.registerResource( &(Context->wxResource) );
+    Context->Rest.registerResource( &(Context->healthResource) );
+    Context->Rest.registerResource( &(Context->defResource) );
+    Context->Rest.registerResource( &(Context->currentResource) );
 
-    Context->Rest.setListeningPort( HNODE_WEATHER_EP_DEFAULT_PORT );
+    Context->Rest.setListeningPort( HNODE_SENSOR_EP_DEFAULT_PORT );
     Context->Rest.start();
 
     return false;
@@ -128,12 +132,44 @@ hnode_process_ep_packet( GIOChannel *source, GIOCondition condition, gpointer da
     {
         case HNSEPP_TYPE_HNS_MEASUREMENT:
         {
+            uint32_t sensorIndex = packet.getSensorIndex();
+
             reading.parsePacketData( packet.getPayloadPtr(), recvd );
 
             std::cout << reading.getAsStr() << std::endl;
-                    //std::cout << "recvd: " << recvd << std::endl;
+            //std::cout << "recvd: " << recvd << std::endl;
 
-            Context->wxManager.addNewMeasurement( reading );
+            Context->sepManager.addNewMeasurement( sensorIndex, reading );
+        }
+        break;
+
+        case HNSEPP_TYPE_HNS_STATUS:
+        {
+            bool           healthOK;
+            struct timeval statusTime;
+            struct timeval lastMeasurementTime;
+            uint32_t       measurementCount;
+            std::string    msg;
+                  
+            // Decode the packet data.
+            healthOK = ( packet.getSensorIndex() == 1 ) ? true : false;
+
+            statusTime.tv_sec  = packet.getParam( 0 );
+            statusTime.tv_usec = packet.getParam( 1 );
+
+            lastMeasurementTime.tv_sec  = packet.getParam( 2 );
+            lastMeasurementTime.tv_usec = packet.getParam( 3 );
+
+            measurementCount = packet.getParam( 4 );
+
+            Context->sepManager.updateHealthStatus( healthOK, &statusTime, &lastMeasurementTime, measurementCount );
+       
+            if( packet.getPayloadLength() > 0 )
+            {
+                msg.assign( (const char *)packet.getPayloadPtr(), packet.getPayloadLength() );
+
+                Context->sepManager.updateHealthMsg( msg );
+            }
         }
         break;
 
@@ -188,12 +224,15 @@ hnode_heartbeat( CONTEXT *Context )
 
             // Pass connection as user_data to the watch callback
             g_io_add_watch( channel, G_IO_IN, (GIOFunc) hnode_process_ep_packet, Context );
+
+            // Set the local health to OK
+            Context->sepManager.setLocalHealthOK();
         }
     }
 
     // Process any pertinent events
     uint32_t time = 0;
-    Context->wxManager.processCurrentEvents( time );
+    Context->sepManager.processCurrentEvents( time );
 
     // Wait for the next timeout
     return TRUE;
@@ -224,7 +263,7 @@ hnode_get_unique_uid( CONTEXT *Context )
     // Add a magic number for this type of hnode
     for( int idx = 0; idx < 4; idx++ )
     {
-        uid[7+idx] = gWeatherSignature[idx];
+        uid[7+idx] = gSensorSignature[idx];
     }
 
     // Handle any instance ID customization
@@ -292,28 +331,32 @@ main( int argc, char *argv[] )
     // Setup the HNode
     g_hnode_set_version(Context.HNode, 1, 0, 0);
     hnode_get_unique_uid( &Context );
-    g_hnode_set_name_prefix(Context.HNode, (guint8*)"WeatherStation");
+    g_hnode_set_name_prefix(Context.HNode, (guint8*)"SensorEndpoint");
 
     g_hnode_set_endpoint_count(Context.HNode, 1);
     
     //guint16 EndPointIndex, guint16 AssociatedEPIndex, guint8 *MimeTypeStr, guint16 Port, guint8 MajorVersion, guint8 MinorVersion, guint16 MicroVersion)
-    g_hnode_set_endpoint(Context.HNode, 0, 0, (guint8*)"hnode-weather-rest", HNODE_WEATHER_EP_DEFAULT_PORT, 1, 0, 0);	
-
-    hnode_load_configuration( &Context );
-
-    hnode_start_hardware_interface( &Context );
-
-    // Start up the manager object
-    Context.wxManager.start(); 
-
-    // Fire up the rest daemon
-    hnode_start_rest_daemon( &Context );
+    g_hnode_set_endpoint( Context.HNode, 0, 0, (guint8*)"hnode-sensor-rest", HNODE_SENSOR_EP_DEFAULT_PORT, 1, 0, 0 );	
 
     // Start up the server object
     g_hnode_start(Context.HNode);
 
-    // Setup the periodic timer for handling timed events
-    g_timeout_add_seconds( 1, (GSourceFunc) hnode_heartbeat, &Context );
+//    hnode_load_configuration( &Context );
+
+//    hnode_start_hardware_interface( &Context );
+
+    // Fire up the rest daemon
+    hnode_start_rest_daemon( &Context );
+
+    // Load the configuration
+    if( Context.sepManager.loadConfiguration() == false )
+    {
+        // Start everything up
+        Context.sepManager.start();
+
+        // Setup the periodic timer for handling timed events
+        g_timeout_add_seconds( 1, (GSourceFunc) hnode_heartbeat, &Context );
+    }
 
     // Start the GLIB Main Loop 
     g_main_loop_run (loop);
