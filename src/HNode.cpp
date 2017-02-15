@@ -213,6 +213,9 @@ hnode_heartbeat( CONTEXT *Context )
             // Failed to connect
             close( Context->epfd );
             Context->epConnected = false;
+
+            // Fail the local health state
+            Context->sepManager.setLocalHealthError( "Could not connect to local sensor daemon." );
         }
         else
         {
@@ -227,6 +230,14 @@ hnode_heartbeat( CONTEXT *Context )
 
             // Set the local health to OK
             Context->sepManager.setLocalHealthOK();
+
+            // Send a ping request to generate a status response from the local daemon.
+            HNodeSEPPacket packet;
+            uint32_t length;
+
+            packet.setType( HNSEPP_TYPE_HNS_PING );
+
+            length = send( Context->epfd, packet.getPacketPtr(), packet.getPacketLength(), MSG_NOSIGNAL );
         }
     }
 
