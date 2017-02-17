@@ -141,10 +141,9 @@ HNodeSEPManager::parseSensor( xmlDocPtr doc, xmlNodePtr objNode )
     // Find the address element
     for( curElem = objNode->children; curElem; curElem = curElem->next ) 
     {
-
         if( ( curElem->type == XML_ELEMENT_NODE ) && ( xmlChildElementCount( curElem ) == 0 ) ) 
         {
-            if( "index" == (const char *)curElem->name )
+            if( strcmp( "index", (const char *)curElem->name ) == 0 )
             {
                 tmpStr = xmlNodeGetContent( curElem );
                 index = strtol( (char*)tmpStr, NULL, 0 );
@@ -152,19 +151,19 @@ HNodeSEPManager::parseSensor( xmlDocPtr doc, xmlNodePtr objNode )
                 indexSet = true;
                 xmlFree( tmpStr );
             }
-            else if( "id" == (const char *)curElem->name )
+            else if( strcmp( "id", (const char *)curElem->name ) == 0 )
             {
                 tmpStr = xmlNodeGetContent( curElem );
                 sensorDef.setID( (char*)tmpStr );
                 xmlFree( tmpStr );
             }
-            else if( "name" == (const char *)curElem->name )
+            else if( strcmp( "name", (const char *)curElem->name ) == 0 )
             {
                 tmpStr = xmlNodeGetContent( curElem );
                 sensorDef.setName( (char*)tmpStr );
                 xmlFree( tmpStr );
             }
-            else if( "desc" == (const char *)curElem->name )
+            else if( strcmp( "desc", (const char *)curElem->name ) == 0 )
             {
                 tmpStr = xmlNodeGetContent( curElem );
                 sensorDef.setDesc( (char*)tmpStr );
@@ -175,6 +174,8 @@ HNodeSEPManager::parseSensor( xmlDocPtr doc, xmlNodePtr objNode )
 
     if( indexSet == true )
     {
+        std::cout << "Add Sensor Def: " << index << std::endl;
+
         definitions.insert( std::pair< uint32_t, SensorDefinition >( index, sensorDef ) );
     }
 }
@@ -263,7 +264,7 @@ HNodeSEPManager::loadConfiguration()
                 {
                     std::cout << "object Elem: " << curElem->name <<std::endl;
                     parseSensor( doc, curElem );
-	            } 
+                } 
             }
         }
     }
