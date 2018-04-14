@@ -1,0 +1,10 @@
+[Unit]
+Description=A hnode REST daemon for the acrt5n1rtld daemon.
+
+[Service]
+Type=simple
+ExecStart=/usr/bin/hnode_sepd
+
+[Install]
+WantedBy=multi-user.target
+
